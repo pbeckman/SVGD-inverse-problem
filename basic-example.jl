@@ -4,11 +4,11 @@ include("./svgd.jl")
 
 function plot_histogram(x; title="", legend=:none)
   M = length(x)
-  xgrid = range(-3, stop=3, length=100)
   pl = histogram(
     getindex.(x, 1), bins=-3:0.2:3, xlims=(-3, 3), ylims=(0, M/10*1.2),
     label="SVGD particles", title=title, legend=legend
     )
+  xgrid = range(-3, stop=3, length=100)
   plot!(pl, 
     xgrid, M/5*pdf.(Normal(), xgrid), 
     linewidth=3, label="Target distribution"
@@ -23,7 +23,6 @@ k(xi, xj; l=1.0)      = exp(-norm(xi - xj)^2 / l^2)
 grad_k(xi, xj; l=1.0) = 2/l^2 * norm(xi - xj) * sign.(xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 # standard normal target distribution
-logp(x) = -norm(x)^2 / 2 
 grad_logp(x) = -sign.(x) * norm(x)
 
 # choose uniform random initial particles
