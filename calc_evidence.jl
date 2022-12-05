@@ -49,7 +49,7 @@ function M_mat(u)
   return M
 end
 
-function evidence(y, f, u_0, c_0, σ2, Λ)
+function evidence(y, f, u_0, c_0, σ2, Λ, S)
   # p(y|f, σ2, Λ, u_0, c_0)
   # where f is PDE rhs [-∇.(c∇u) = f]
   # σ2 is Gaussian noise variance
@@ -60,9 +60,9 @@ function evidence(y, f, u_0, c_0, σ2, Λ)
   Linv = inv(L)
   M = M_mat(u_0)
   μ = L\(M*2f)
-  Σ = σ2*I(n) + Linv*M*Λ*M'*Linv'
-  S = cholesky(Σ)
-  return 1/sqrt(2pi)*exp((y.-μ)'*(S\(y.-μ)) - 0.5*logdet(S))
+  Σ = σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
+  Sc = cholesky(Σ)
+  return 1/sqrt(2pi)*exp((y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(S))
 end
 
 function solve_poisson(c, f, a, b)
@@ -120,6 +120,36 @@ function sample(xx,X,U)
   # X should be an array (in 1D) or a tuple of arrays (in ND)
   interp_linear = linear_interpolation(X,U)
   return [interp_linear(xx[i]) for i = 1:length(xx)]
+end
+
+function bisect_srch(x,Y)
+  n = length(Y)
+  lo = 1
+  hi = n
+  while lo+1 < hi
+    ix = (hi+lo)>>1
+    yy = Y[ix]
+    if yy <= x
+      lo = ix
+    else
+      hi = ix
+    end
+  end
+  return lo
+end
+
+function S_mat(xx,X)
+  # interpolation matrix constructor
+  m = length(xx)
+  n = length(X)
+  S = zeros(m,n)
+  for i = 1:m
+    j = bisect_srch(xx[i],X)
+    d = (xx[i]-X[j])/(X[j+1]-X[j])
+    S[i,j] = d
+    S[i,j+1] = 1-d
+  end
+  return sparse(S)
 end
 
 # regular grid for PDE discretization
@@ -198,10 +228,13 @@ n_trial = 10:30
 ev_trial = zeros(size(n_trial))
 for i = 1:length(n_trial)
   n = n_trial[i]
-  x = range(0, stop=1.0, length=n)
-  K_prior = [k_prior(xi, xj) for xi in x, xj in x]
+  xs = range(0, stop=1.0, length=n)
+  K_prior = [k_prior(xi, xj) for xi in xs, xj in xs]
   Kc = cholesky(K_prior)
   logc = collect.(eachcol(Kc.L * randn(n, M)))
   Λ = inv(Kc)
-  ev_trial[i] = evidence(y, f, u_0, c_0, s2, Λ)
+  S = S_mat(x_obs,xs)
+  ev_trial[i] = evidence(y, f, u_0, c_0, s2, Λ, S)
 end
+
+plot(n_trial, ev_trial, title="Evidence vs. number of grid pts")
