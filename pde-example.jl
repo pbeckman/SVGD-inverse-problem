@@ -12,26 +12,26 @@ function lin_interp(x_ref, u_ref, xs)
   return us
 end
 
-function plot_distribution(x, logc, c_true; title="", legend=:none)
+function plot_distribution(x, logc, c_true; title="", legend=:none, ylabel="")
   M = length(logc)
   mu = reduce(.+, logc) / M
-  pl = plot(
+  pl = plot( 
+    x, logc, 
+    label="",
+    linewidth=1, alpha=0.2, c=:darkorange2,
+    title=title, legend=legend, xlabel="x", ylabel=ylabel
+    )
+  plot!(pl,
     x, reduce(.+, logc) / M, 
-    label="SVGD posterior mean (±2σ)",
+    label="post. mean",
     # marker=2,
-    linewidth=3, c=:orange,
-    ribbon=2sqrt.(sum((.^).([lc .- mu for lc in logc], 2)) / M), fillalpha=0.5,
-    title=title, legend=legend
+    linewidth=3, c=:darkorange, linestyle=:dash,
+    ribbon=2sqrt.(sum((.^).([lc .- mu for lc in logc], 2)) / M), fillalpha=0.3
     )
   # xgrid = range(0, stop=1, length=100)
   plot!(pl, 
-    x, logc, 
-    label="",
-    linewidth=1, alpha=0.2
-    )
-  plot!(pl, 
     x, log.(c_true), 
-    label="True log-permeability",
+    label="true",
     # marker=2,
     linewidth=3, c=:purple
     )
@@ -88,12 +88,12 @@ x = rand(n)
 # generate data
 y = lin_interp(x_ref, u_ref, x) .+ sqrt(s2) * randn(n)
 # discretization of PDE
-nd = 20
+nd = 30
 fd = ones(nd-2)
 xd = range(0, stop=1.0, length=nd)
 
 # Matern nu = 3/2 covariance function for prior
-sc_prior, l_prior = 0.1, 10
+sc_prior, l_prior = 0.01, 2
 function k_prior(xi, xj) 
   d = norm(xi - xj) / l_prior
   return sc_prior * (1 + sqrt(3)*d) * exp(-sqrt(3)*d)
@@ -141,45 +141,49 @@ grad_k(xi, xj) = -2/l^2 * (xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 # iteration parameters
 step_size = 1e-8
-iter      = 1000
+iter      = 10000
 
 # run SVGD and make some intermediate plots
 gr(size=(300, 300))
 pls = []
-push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration 0", legend=:topright))
+push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration 0", legend=:topright, ylabel="logc"))
 display(pls[end])
-nfig = 6
-for i=1:(nfig-1)
-  println("Running SVGD iterations $((i-1)*Int64(iter/(nfig-1))) - $(i*Int64(iter/(nfig-1)))...")
+saveiters = [0, 100, 1000, 10000]
+for i=2:length(saveiters)
+  println("Running SVGD iterations $(saveiters[i-1]) - $(saveiters[i])...")
   logc .= SVGD(
     k, grad_k,
     grad_logp, logc, 
-    step_size, round(iter/(nfig-1)), 
+    step_size, saveiters[i] - saveiters[i-1], 
     verbose=false
     # bounds=(fill(-3, n), fill(-1, n))
     )
-  push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration $(i*Int64(iter/(nfig-1)))"))
+  push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration $(saveiters[i])"))
   display(pls[end])
 end
 
 # plot data
 pl_data = plot(
   x_ref, u_ref, 
-  label="True solution",
-  linewidth=3, marker=2,  c=:blue
+  label="true",
+  linewidth=3, c=:blue,
+  size=(300, 200)
   )
 plot!(pl_data,
   xd, solve_poisson(exp.(sum(logc) / M), fd, a, b), 
-  label="Solution with mean permeability",
-  linewidth=3, marker=3, c=:red, linestyle=:dash
+  label="using post. mean",
+  linewidth=3, c=:red, linestyle=:dash
   )
 scatter!(pl_data, 
   x, y, 
-  label="Noisy data",
-  marker=5, c=:black
+  label="data",
+  marker=4, c=:black
   )
-l = @layout [a{0.3w} grid(2,3)]
-pl = plot(pl_data, pls..., layout=l, size=(1500, 500), margin=2mm)
+display(pl_data)
+readline(stdin)
+
+l = @layout [grid(2,2)]
+pl = plot(pls..., layout=l, size=(600, 600))
 display(pl)
 println("\nDisplaying final plot...")
-# readline(stdin)
+readline(stdin)
