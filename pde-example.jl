@@ -123,6 +123,7 @@ function adj_grad_logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior)
   grad = -2*K_prior \ logc
   for i = 1:n
     grad[i] += exp(logc[i]) * dudx[i] * dpdx[i]
+  end
   return grad
 end
 
