@@ -111,7 +111,7 @@ end
 grad_logp(logc) = gradient(logc -> logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior), logc)
 
 # choose initial particles from prior
-M    = 100
+M    = 10
 logc = collect.(eachcol(cholesky(K_prior).L * randn(nd, M) .+ mu_prior))
 
 # squared exponential kernel function for SVGD space

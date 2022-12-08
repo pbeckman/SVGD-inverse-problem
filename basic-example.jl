@@ -58,5 +58,5 @@ l = @layout [a b c d e]
 pl = plot(pls..., layout=l, size=(1500, 300), margin=5mm)
 display(pl)
 println("\nDisplaying final plot...")
-# readline(stdin)
+readline(stdin)
 
