@@ -104,10 +104,28 @@ K_prior = [k_prior(xi, xj) for xi in xd, xj in xd]
 mu_prior = fill(sum(log.(c_true_func.(xd)) / nd), nd)
 
 # posterior target distribution
-function logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior) 
+function logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior)
   ud = solve_poisson(exp.(logc), fd, a, b)
   return -norm(y - lin_interp(xd, ud, x))^2 / (2*s2) - dot((logc .- mu_prior), K_prior \ (logc .- mu_prior)) / 2
 end
+
+# gradient of log posterior, computed using adjoint method
+function adj_grad_logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior)
+  n = length(logc)
+  h = 1/(n-1)
+  # solve for u and adjoint variable p
+  ud = solve_poisson(exp.(logc), fd, a, b)
+  pd = solve_poisson(exp.(logc), (y-ud)/s2, 0, 0)
+  # finite difference derivatives of u and p
+  dudx = vcat(ud[1]-a, ud[2:end]-ud[1:end-1])*h
+  dpdx = vcat(pd[1]-0, pd[2:end]-pd[1:end-1])*h
+  # evaluate gradient formula
+  grad = -2*K_prior \ logc
+  for i = 1:n
+    grad[i] += exp(logc[i]) * dudx[i] * dpdx[i]
+  return grad
+end
+
 grad_logp(logc) = gradient(logc -> logp(logc, xd, fd, a, b, y, s2, K_prior, mu_prior), logc)
 
 # choose initial particles from prior
