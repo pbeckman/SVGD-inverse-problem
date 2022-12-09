@@ -1,8 +1,7 @@
 using LinearAlgebra, Plots, Plots.Measures
-using Interpolations
-import ForwardDiff: gradient
 
 include("./svgd.jl")
+include("./pde-setup.jl")
 
 function plot_distribution(x, logc, c_true; title="", legend=:none)
   M = length(logc)
@@ -65,33 +64,6 @@ function evidence(y, f, u_0, c_0, σ2, Λ, S)
   return 1/sqrt(2pi)*exp((y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(S))
 end
 
-function solve_poisson(c, f, a, b)
-  n = length(c)
-  h = 1/(n-1)
-
-  # build finite difference system matrix
-  A = 1/h^2 * Tridiagonal(
-    c[1:end-1],
-    -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
-    c[2:end]
-    )
-  
-  # enforce boundary conditions u(0) = a, u(1) = b
-  A[1, 1:2]         .= [1, 0]
-  A[end, end-1:end] .= [0, 1]
-
-  # if eltype(c) == Float64
-  #   @show c
-  # else
-  #   @show getfield.(c, :value)
-  # end
-
-  # solve PDE
-  u = (A \ vcat(a, f, b))[2:end-1]
-  
-  return u
-end
-
 function svgd_solve!(logc, x, y, l, M, step_size, iter, verb=False, c_debug=nothing)
   if verb
     gr(size=(300, 300))
@@ -103,7 +75,7 @@ function svgd_solve!(logc, x, y, l, M, step_size, iter, verb=False, c_debug=noth
     println("Running SVGD iterations $((i-1)*Int64(iter/5)) - $(i*Int64(iter/5))...")
     logc .= SVGD(
       (xi, xj) -> k(xi, xj, l=l), (xi, xj) -> grad_k(xi, xj, l=l), 
-      grad_logp, logc, 
+      logc -> grad_logp(logc, x, f, a, b, x_obs, y, s2, K_prior, mu_prior), logc, 
       step_size, iter/5, 
       verbose=false
       )
@@ -112,14 +84,6 @@ function svgd_solve!(logc, x, y, l, M, step_size, iter, verb=False, c_debug=noth
       display(pls[end])
     end
   end
-end
-
-function sample(xx,X,U)
-  # sample a rectangular grid (X,U) onto irregular points xx[i]
-  # xx should be an array (in 1D) or an array of tuples (in ND)
-  # X should be an array (in 1D) or a tuple of arrays (in ND)
-  interp_linear = linear_interpolation(X,U)
-  return [interp_linear(xx[i]) for i = 1:length(xx)]
 end
 
 function bisect_srch(x,Y)
@@ -160,7 +124,7 @@ a, b = 1, -1
 # forcing
 f = zeros(n-2)
 # true permeability
-c_true = 0.1 .+ 0.5*x .^ 2
+c_true_func(x) = 1e-1*(1 + x^2 + 0.2sin(4pi*x))
 # iid noise variance for gaussian likelihood
 s2 = 1e-2
 # generate data
@@ -170,7 +134,7 @@ u_true = solve_poisson(c_true, f, a, b)
 # Irregular grid for observations
 n_obs = 17
 x_obs = rand(n_obs)
-y     = sample(x_obs,x,u_true) .+ sqrt(s2) * randn(n-2)
+y     = sample(x_obs,x,u_true) .+ sqrt(s2) * randn(n_obs)
 
 # Matern nu = 3/2 covariance function for prior
 function k_prior(xi, xj; sc=1.0, l=1.0) 
@@ -179,13 +143,8 @@ function k_prior(xi, xj; sc=1.0, l=1.0)
 end
 # compute prior covariance matrix
 K_prior = [k_prior(xi, xj) for xi in x, xj in x]
-
-# posterior target distribution
-function logp(logc, f, a, b, y, s2, K_prior) 
-  u = solve_poisson(exp.(logc), f, a, b)
-  return -norm(y - u)^2 / (2*s2) - dot(logc, K_prior \ logc) / 2
-end
-grad_logp(logc) = gradient(logc -> logp(logc, f, a, b, y, s2, K_prior), logc)
+# select prior mean
+mu_prior = fill(sum(log.(c_true_func.(x)) / n), n)
 
 # lengthscale for SVGD kernel
 l = 0.01
