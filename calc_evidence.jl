@@ -1,29 +1,34 @@
-using LinearAlgebra, Plots, Plots.Measures
+using LinearAlgebra, Plots, Plots.Measures, SparseArrays
 
 include("./svgd.jl")
 include("./pde-setup.jl")
 
-function plot_distribution(x, logc, c_true; title="", legend=:none)
+function plot_distribution(x, logc, c_true; title="", legend=:none, ylabel="")
   M = length(logc)
-  pl = plot(
-    x, sum(logc) / M, 
-    linewidth=2, marker=2, label="SVGD posterior mean (±2σ)", 
-    ribbon=2sqrt.(sum((.^).(logc, 2)) / M), fillalpha=0.5,
-    title=title, legend=legend
+  mu = reduce(.+, logc) / M
+  pl = plot( 
+    x, logc, 
+    label="",
+    linewidth=1, alpha=0.2, c=:darkorange2, 
+    ylims=(minimum(log.(c_true)) - 0.2, maximum(log.(c_true)) + 0.2),
+    title=title, legend=legend, xlabel="x", ylabel=ylabel
+    )
+  plot!(pl,
+    x, reduce(.+, logc) / M, 
+    label="post. mean",
+    # marker=2,
+    linewidth=3, c=:darkorange, linestyle=:dash,
+    ribbon=2sqrt.(sum((.^).([lc .- mu for lc in logc], 2)) / M), fillalpha=0.3
     )
   # xgrid = range(0, stop=1, length=100)
   plot!(pl, 
     x, log.(c_true), 
-    linewidth=2, marker=2, label="True log-permeability"
+    label="true",
+    # marker=2,
+    linewidth=3, c=:purple
     )
   return pl
 end
-
-println("Setting up problem...\n")
-
-# squared exponential kernel function for SVGD space
-k(xi, xj; l=1.0)      = exp(-norm(xi - xj)^2 / l^2)
-grad_k(xi, xj; l=1.0) = 2/l^2 * norm(xi - xj) * sign.(xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 function L_mat(c)
   n = length(c)
@@ -64,28 +69,6 @@ function evidence(y, f, u_0, c_0, σ2, Λ, S)
   return 1/sqrt(2pi)*exp((y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(S))
 end
 
-function svgd_solve!(logc, x, y, l, M, step_size, iter, verb=False, c_debug=nothing)
-  if verb
-    gr(size=(300, 300))
-    pls = []
-    push!(pls, plot_distribution(x, logc, c_true, title="Iteration 0", legend=:topright))
-    display(pls[end])
-  end
-  for i=1:5
-    println("Running SVGD iterations $((i-1)*Int64(iter/5)) - $(i*Int64(iter/5))...")
-    logc .= SVGD(
-      (xi, xj) -> k(xi, xj, l=l), (xi, xj) -> grad_k(xi, xj, l=l), 
-      logc -> grad_logp(logc, x, f, a, b, x_obs, y, s2, K_prior, mu_prior), logc, 
-      step_size, iter/5, 
-      verbose=false
-      )
-    if verb
-      push!(pls, plot_distribution(x, logc, c_true, title="Iteration $(i*Int64(iter/5))"))
-      display(pls[end])
-    end
-  end
-end
-
 function bisect_srch(x,Y)
   n = length(Y)
   lo = 1
@@ -116,84 +99,114 @@ function S_mat(xx,X)
   return sparse(S)
 end
 
-# regular grid for PDE discretization
-n = 20
-x = range(0, stop=1.0, length=n)
+println("Setting up problem...\n")
+
 # boundary conditions u(0) = a, u(1) = b
-a, b = 1, -1
-# forcing
-f = zeros(n-2)
+a, b = 0, 0
 # true permeability
 c_true_func(x) = 1e-1*(1 + x^2 + 0.2sin(4pi*x))
 # iid noise variance for gaussian likelihood
 s2 = 1e-2
+# compute reference solution
+n_ref = 40
+f_ref = ones(n_ref-2)
+x_ref = range(0, stop=1.0, length=n_ref)
+u_ref = solve_poisson(c_true_func.(x_ref), f_ref, a, b)
+# observation locations
+n = 12
+x = rand(n)
 # generate data
-u_true = solve_poisson(c_true, f, a, b)
-#y      = u_true .+ sqrt(s2) * randn(n-2)
-
-# Irregular grid for observations
-n_obs = 17
-x_obs = rand(n_obs)
-y     = sample(x_obs,x,u_true) .+ sqrt(s2) * randn(n_obs)
+c_true = c_true_func.(x_ref)
+y = sample(x, x_ref, u_ref) .+ sqrt(s2) * randn(n)
+# discretization of PDE
+nd = 15
+fd = ones(nd-2)
+xd = range(0, stop=1.0, length=nd)
 
 # Matern nu = 3/2 covariance function for prior
-function k_prior(xi, xj; sc=1.0, l=1.0) 
-  d = norm(xi - xj) / l
-  return sc * (1 + sqrt(3)*d) * exp(-sqrt(3)*d)
+sc_prior, l_prior = 0.01, 0.5
+function k_prior(xi, xj) 
+  d = norm(xi - xj) / l_prior
+  return sc_prior * (1 + sqrt(3)*d) * exp(-sqrt(3)*d)
 end
 # compute prior covariance matrix
-K_prior = [k_prior(xi, xj) for xi in x, xj in x]
+K_prior = [k_prior(xi, xj) for xi in xd, xj in xd]
 # select prior mean
-mu_prior = fill(sum(log.(c_true_func.(x)) / n), n)
+mu_prior = fill(sum(log.(c_true_func.(xd)) / nd), nd)
 
-# lengthscale for SVGD kernel
-l = 0.01
 # choose initial particles from prior
-M    = 20
-logc = collect.(eachcol(cholesky(K_prior).L * randn(n, M)))
+M    = 10
+logc = collect.(eachcol(cholesky(K_prior).L * randn(nd, M) .+ mu_prior))
+
+# squared exponential kernel function for SVGD space
+l = sum([norm(xi - xj) for xi in logc, xj in logc]) / M^2
+l /= 1
+@show l
+k(xi, xj)      = exp(-norm(xi - xj)^2 / l^2)
+grad_k(xi, xj) = -2/l^2 * (xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 # iteration parameters
-step_size = 1e-5
-iter      = 10000
+step_size = 1e-7
+iter      = 1000
 
 # run SVGD and make some intermediate plots
-svgd_solve!(logc, x, y, l, M, step_size, iter, true, c_true)
+gr(size=(300, 300))
+pls = []
+push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration 0", legend=:topright, ylabel="logc"))
+display(pls[end])
+saveiters = [100, 1000, 10000]
+for i=1:length(saveiters)
+  println("Running SVGD iterations $(i == 1 ? 0 : saveiters[i-1]) - $(saveiters[i])...")
+  logc .= SVGD(
+    k, grad_k,
+    logc -> grad_logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior), logc, 
+    step_size, saveiters[i] - (i == 1 ? 0 : saveiters[i-1]), 
+    verbose=false
+    # bounds=(fill(-3, n), fill(-1, n))
+    )
+  push!(pls, plot_distribution(xd, logc, c_true_func.(xd), title="Iteration $(saveiters[i])"))
+  display(pls[end])
+end
 
-# plot all histograms
+# plot data
 pl_data = plot(
-  x, vcat(a, u_true, b), 
-  label="True solution",
-  linewidth=3, marker=2,  c=:blue
+  x_ref, u_ref, 
+  label="true",
+  linewidth=3, c=:blue,
+  size=(300, 200)
   )
 plot!(pl_data,
-  x, vcat(a, solve_poisson(exp.(sum(logc) / M), f, a, b), b), 
-  label="Solution with mean permeability",
-  linewidth=3, marker=2, c=:red, linestyle=:dash
+  xd, solve_poisson(exp.(sum(logc) / M), fd, a, b), 
+  label="using post. mean",
+  linewidth=3, c=:red, linestyle=:dash
   )
 scatter!(pl_data, 
-  x[2:end-1], y, 
-  label="Noisy data",
-  marker=5, c=:black
+  x, y, 
+  label="data",
+  marker=4, c=:black
   )
-l = @layout [a{0.4w} grid(2,3)]
-pl = plot(pl_data, pls..., layout=l, size=(1500, 500), margin=5mm)
-display(pl)
+display(pl_data)
+# readline(stdin)
+l = @layout [grid(2,2)]
+pl = plot(pls..., layout=l, size=(600, 600))
+gui(pl)
 println("\nDisplaying final plot...")
-readline(stdin)
 
 
 # Model selection
-n_trial = 10:30
+n_trial = 8:17
 ev_trial = zeros(size(n_trial))
+c_0 = reduce(.+,logc)
+u_0 = 
 for i = 1:length(n_trial)
-  n = n_trial[i]
-  xs = range(0, stop=1.0, length=n)
-  K_prior = [k_prior(xi, xj) for xi in xs, xj in xs]
+  n_t = n_trial[i]
+  f_t = ones(n_trial)   # hax -- should correspond to f.(x_t)
+  x_t = range(0, stop=1.0, length=n_t)
+  K_prior = [k_prior(xi, xj) for xi in x_t, xj in x_t]
   Kc = cholesky(K_prior)
-  logc = collect.(eachcol(Kc.L * randn(n, M)))
   Λ = inv(Kc)
-  S = S_mat(x_obs,xs)
-  ev_trial[i] = evidence(y, f, u_0, c_0, s2, Λ, S)
+  S = S_mat(x,x_t)
+  ev_trial[i] = evidence(y, f_t, u_0, c_0, s2, Λ, S)
 end
 
-plot(n_trial, ev_trial, title="Evidence vs. number of grid pts")
+gui(plot(n_trial, ev_trial, title="Evidence vs. number of grid pts"))
