@@ -68,7 +68,7 @@ function evidence(y, f, u_0, m_0, σ2, Λ, S)
   Linv = inv(L)
   M = M_mat(u_0, m_0)
   μ = S*(L\(M*2f))
-  Σ = 1e-15I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
+  Σ = 1e-12I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
   Sc = cholesky(0.5*(Σ+Σ'))
   return -(y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(Sc) - 0.5*log(2pi)
 end
@@ -112,7 +112,7 @@ c_true_func(x) = 1e-1*(1 + x^2 + 0.2sin(4pi*x))
 # iid noise variance for gaussian likelihood
 s2 = 1e-2
 # compute reference solution
-n_ref = 15
+n_ref = 25
 f_ref = ones(n_ref-2)
 x_ref = range(0, stop=1.0, length=n_ref)
 u_ref = solve_poisson(c_true_func.(x_ref), f_ref, a, b)
@@ -139,12 +139,12 @@ grad_kl(xi, xj,l) = -2/l^2 * (xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 # iteration parameters
 step_size = 1e-7
-iter      = 10000
+iter      = 1000
 
 println("Performing model selection\n")
 
 # Model selection
-n_trial = 8:25
+n_trial = 15:35
 ev_trial = zeros(size(n_trial))
 for i = 1:length(n_trial)
   # Setting up grid
@@ -181,4 +181,8 @@ for i = 1:length(n_trial)
   ev_trial[i] = evidence(y, vcat(a,f_t,b), u_0, c_0, s2, Λ, S)
 end
 
-gui(plot(n_trial, ev_trial, title="Evidence vs. number of grid pts"))
+gui(plot(n_trial, ev_trial, title="Log evidence vs. number of grid pts",
+                            xlabel="n",
+                            ylabel="log evidence",
+                            linewidth=2,
+                            legend=false))
