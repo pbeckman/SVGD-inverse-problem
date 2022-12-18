@@ -34,14 +34,14 @@ function L_mat(m)
   n = length(m)
   c = exp.(m)
   h = 1/(n-1)
-  L = 1/h^2 * Tridiagonal(
+  L = -1/h^2 * Tridiagonal(
       c[1:end-1],
       -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
       c[2:end]
   )
   L[1, 1:2]         .= [1, 0]
   L[end, end-1:end] .= [0, 1]
-  return -L
+  return L
 end
 
 function M_mat(u,m)
@@ -67,10 +67,38 @@ function evidence(y, f, u_0, m_0, σ2, Λ, S)
   L = L_mat(m_0)
   Linv = inv(L)
   M = M_mat(u_0, m_0)
-  μ = S*(L\(M*2f))
-  Σ = 1e-15I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
+  μ = -S*(L\(M*2f))
+  Σ = 1e-12I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
   Sc = cholesky(0.5*(Σ+Σ'))
   return -(y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(Sc) - 0.5*log(2pi)
+end
+
+# Computing evidence using basic Metropolis-Hastings MCMC
+function evid_MCMC(xd, fd, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, m_0)
+  n = length(xd)
+  m = zeros(n,nsamp)
+  vals = zeros(nsamp)
+  # hard-coded initial logc
+  m[:,1] = m_0
+  accepted = 0
+  for idx = 2:nsamp
+    # isotropic Gaussian proposal distribution
+    mnew = m[:,idx-1] + step*randn(n,1)
+    pnew = logprior(mnew, K_prior, mu_prior)
+    pold = logprior(m[:,idx-1], K_prior, mu_prior)
+    #println(pnew, " \t", pold)
+    # accept or reject
+    if min(1,exp(pnew-pold)) > rand()
+      accepted += 1
+      m[:,idx] = mnew
+    else
+      m[:,idx] = m[:,idx-1]
+    end
+    vals[idx] = loglike(m[:,idx], xd, fd, a, b, x, y, s2)
+  end
+  # remove burnin
+  vals = vals[(trunc(Int,nsamp/10)+1):end]
+  return sum(vals)/length(vals), accepted/nsamp
 end
 
 function bisect_srch(x,Y)
@@ -112,12 +140,12 @@ c_true_func(x) = 1e-1*(1 + x^2 + 0.2sin(4pi*x))
 # iid noise variance for gaussian likelihood
 s2 = 1e-2
 # compute reference solution
-n_ref = 15
+n_ref = 12
 f_ref = ones(n_ref-2)
 x_ref = range(0, stop=1.0, length=n_ref)
 u_ref = solve_poisson(c_true_func.(x_ref), f_ref, a, b)
 # observation locations
-n = 12
+n = 8
 x = rand(n)
 # generate data
 c_true = c_true_func.(x_ref)
@@ -139,13 +167,18 @@ grad_kl(xi, xj,l) = -2/l^2 * (xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
 # iteration parameters
 step_size = 1e-7
-iter      = 10000
+iter      = 1000
+
+# MCMC parameters
+nsamp = 100000
+step = 0.01
 
 println("Performing model selection\n")
 
 # Model selection
 n_trial = 15:5:45
 ev_trial = zeros(size(n_trial))
+ev_MCMC = zeros(size(n_trial))
 for i = 1:length(n_trial)
   # Setting up grid
   n_t = n_trial[i]
@@ -156,6 +189,7 @@ for i = 1:length(n_trial)
 
   # Calculating prior distribution
   K_prior = [k_prior(xi, xj) for xi in x_t, xj in x_t]
+  #println(-logdet(K_prior))
   mu_prior = fill(sum(log.(c_true_func.(x_t)) / n_t), n_t)
   Kc = cholesky(K_prior)
   logc = collect.(eachcol(cholesky(K_prior).L * randn(n_t, np) .+ mu_prior))
@@ -179,13 +213,19 @@ for i = 1:length(n_trial)
   Λ = inv(Kc)
   S = S_mat(x,x_t)
   ev_trial[i] = evidence(y, vcat(a,f_t,b), u_0, c_0, s2, Λ, S)
-
-  println(", p(D|n) = ", ev_trial[i])
+  ev_MCMC[i], accrate = evid_MCMC(x_t, f_t, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, c_0)
+  println("accept rate = ", accrate)
 end
 
-gui(plot(n_trial, ev_trial, title="Evidence vs. number of grid pts", label=""))
 
-bar(
-  n_trial, log10.(-ev_trial), 
-  title="Evidence vs. number of grid pts", label="", size=(500,300), margin=3mm, xlabel="x", ylabel="log10(-p(D|n))"
-  )
+gui(plot(n_trial, ev_trial, title="Log evidence vs. number of grid pts",
+                            xlabel="n",
+                            ylabel="log evidence",
+                            linewidth=2,
+                            legend=false))
+                            
+gui(plot(n_trial, ev_MCMC, title="MCMC log evidence vs. number of grid pts",
+                            xlabel="n",
+                            ylabel="log evidence",
+                            linewidth=2,
+                            legend=false))
