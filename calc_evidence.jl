@@ -144,7 +144,7 @@ iter      = 10000
 println("Performing model selection\n")
 
 # Model selection
-n_trial = 8:25
+n_trial = 15:5:45
 ev_trial = zeros(size(n_trial))
 for i = 1:length(n_trial)
   # Setting up grid
@@ -152,7 +152,7 @@ for i = 1:length(n_trial)
   f_t = ones(n_t-2)   # hax -- should correspond to f.(x_t)
   x_t = range(0, stop=1.0, length=n_t)
 
-  println("n = ",n_t)
+  print("n = ", n_t)
 
   # Calculating prior distribution
   K_prior = [k_prior(xi, xj) for xi in x_t, xj in x_t]
@@ -179,6 +179,13 @@ for i = 1:length(n_trial)
   Λ = inv(Kc)
   S = S_mat(x,x_t)
   ev_trial[i] = evidence(y, vcat(a,f_t,b), u_0, c_0, s2, Λ, S)
+
+  println(", p(D|n) = ", ev_trial[i])
 end
 
-gui(plot(n_trial, ev_trial, title="Evidence vs. number of grid pts"))
+gui(plot(n_trial, ev_trial, title="Evidence vs. number of grid pts", label=""))
+
+bar(
+  n_trial, log10.(-ev_trial), 
+  title="Evidence vs. number of grid pts", label="", size=(500,300), margin=3mm, xlabel="x", ylabel="log10(-p(D|n))"
+  )
