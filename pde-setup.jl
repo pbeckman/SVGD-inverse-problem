@@ -81,4 +81,33 @@ end
 function grad_logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior)
   return gradient(logc -> logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior), logc)
 end
+
+
+# Computing evidence using basic Metropolis-Hastings MCMC
+function evid_MCMC(xd, fd, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, m_0)
+  n = length(xd)
+  m = zeros(n,nsamp)
+  vals = zeros(nsamp)
+  # hard-coded initial logc
+  m[:,1] = m_0
+  accepted = 0
+  for idx = 2:nsamp
+    # isotropic Gaussian proposal distribution
+    mnew = m[:,idx-1] + step*randn(n,1)
+    pnew = logprior(mnew, K_prior, mu_prior)
+    pold = logprior(m[:,idx-1], K_prior, mu_prior)
+    #println(pnew, " \t", pold)
+    # accept or reject
+    if min(1,exp(pnew-pold)) > rand()
+      accepted += 1
+      m[:,idx] = mnew
+    else
+      m[:,idx] = m[:,idx-1]
+    end
+    vals[idx] = loglike(m[:,idx], xd, fd, a, b, x, y, s2)
+  end
+  # remove burnin
+  vals = vals[(trunc(Int,nsamp/10)+1):end]
+  return sum(vals)/length(vals), accepted/nsamp
+end
   

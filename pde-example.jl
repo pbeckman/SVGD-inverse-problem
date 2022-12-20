@@ -67,6 +67,7 @@ mu_prior = fill(sum(log.(c_true_func.(xd)) / nd), nd)
 # choose initial particles from prior
 M    = 10
 logc = collect.(eachcol(cholesky(K_prior).L * randn(nd, M) .+ mu_prior))
+@show size(logc)
 
 # squared exponential kernel function for SVGD space
 l = sum([norm(xi - xj) for xi in logc, xj in logc]) / M^2
