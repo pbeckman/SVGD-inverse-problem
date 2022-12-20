@@ -42,6 +42,17 @@ function solve_poisson(c, f, a, b; verbose=false)
   return u
 end
 
+# log likelihood
+function loglike(logc, xd, fd, a, b, x, y, s2)
+  ud = solve_poisson(exp.(logc), fd, a, b)
+  return -norm(y - sample(x, xd, ud))^2 / (2*s2)
+end
+
+# log prior
+function logprior(logc, K_prior, mu_prior)
+  return - dot((logc .- mu_prior), K_prior \ (logc .- mu_prior)) / 2
+end
+
 # log posterior
 function logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior)
   ud = solve_poisson(exp.(logc), fd, a, b)
