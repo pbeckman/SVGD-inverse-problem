@@ -165,9 +165,9 @@ np = 10
 kl(xi, xj,l)      = exp(-norm(xi - xj)^2 / l^2)
 grad_kl(xi, xj,l) = -2/l^2 * (xi - xj) * exp(-norm(xi - xj)^2/l^2)
 
-# iteration parameters
+# SVGD parameters
 step_size = 1e-7
-iter      = 1000
+iter      = 10000
 
 # MCMC parameters
 nsamp = 100000
@@ -214,7 +214,7 @@ for i = 1:length(n_trial)
   S = S_mat(x,x_t)
   ev_trial[i] = evidence(y, vcat(a,f_t,b), u_0, c_0, s2, Λ, S)
   ev_MCMC[i], accrate = evid_MCMC(x_t, f_t, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, c_0)
-  println("accept rate = ", accrate)
+  println(" accept rate = ", accrate)
 end
 
 

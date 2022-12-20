@@ -20,10 +20,11 @@ function solve_poisson(c, f, a, b; verbose=false)
     -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
     c[2:end]
     )
+  @show size(A), size(c), size(f)
   
-  # enforce boundary conditions u(0) = a, u(1) = b
-  A[1, 1:2]         .= [1, 0]
-  A[end, end-1:end] .= [0, 1]
+  # # enforce boundary conditions u(0) = a, u(1) = b
+  # A[1, 1:2]         .= [1, 0]
+  # A[end, end-1:end] .= [0, 1]
 
   # print statements to help debug singularity exceptions
   if verbose
@@ -37,7 +38,7 @@ function solve_poisson(c, f, a, b; verbose=false)
   end
 
   # solve PDE
-  u = A \ vcat(a, f, b)
+  u = A \ f # vcat(a, f, b)
   
   return u
 end
