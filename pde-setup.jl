@@ -17,8 +17,8 @@ function solve_poisson(c, f, a, b; verbose=false)
   # build finite difference system matrix
   A = -1/h^2 * Tridiagonal(
     c[1:end-1],
-    -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
-    c[2:end]
+    -vcat(1.0, c[1:end-2]+c[2:end-1], 1.0), 
+    c[1:end-1]
     )
   
   # enforce boundary conditions u(0) = a, u(1) = b
