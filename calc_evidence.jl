@@ -48,7 +48,7 @@ function M_mat(u,m)
   # Implicitly applies c_{i+1} = 0 BCs on c!
   n = length(u)
   h = 1/(n-1)
-  z = [exp(m[i])/m[i]*(u[i]-u[i-1])/h for i = 2:n]
+  z = [exp(m[i])*(u[i]-u[i-1])/h for i = 2:n]
   M = 1/h * Bidiagonal(
       vcat(0.0,z[1:n-2],0.0),
       vcat(0.0,-z[2:n-1]),
@@ -67,7 +67,7 @@ function evidence(y, f, u_0, m_0, σ2, Λ, S)
   L = L_mat(m_0)
   Linv = inv(L)
   M = M_mat(u_0, m_0)
-  μ = -S*(L\(M*2f))
+  μ = -S*(L\(M*(f-M*m0)))
   Σ = 1e-12I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
   Sc = cholesky(0.5*(Σ+Σ'))
   return -(y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(Sc) - 0.5*log(2pi)

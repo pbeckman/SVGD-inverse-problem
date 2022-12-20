@@ -15,12 +15,12 @@ function solve_poisson(c, f, a, b; verbose=false)
   h = 1/(n-1)
 
   # build finite difference system matrix
+
   A = -1/h^2 * Tridiagonal(
     c[1:end-1],
     -vcat(1.0, c[1:end-2]+c[2:end-1], 1.0), 
     c[1:end-1]
     )
-  @show size(A), size(c), size(f)
   
   # enforce boundary conditions u(0) = a, u(1) = b
   A[1, 1:2]         .= [1, 0]
@@ -81,5 +81,32 @@ end
 # gradient of log posterior, computed using automatic differentiation
 function grad_logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior)
   return gradient(logc -> logp(logc, xd, fd, a, b, x, y, s2, K_prior, mu_prior), logc)
+end
+
+
+# Computing evidence using basic Metropolis-Hastings MCMC
+function post_MCMC(xd, fd, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, m_0)
+  n = length(xd)
+  m = Array{Vector{Float64},1}(undef,nsamp)
+  # hard-coded initial m
+  m[1] = m_0
+  accepted = 0
+  for idx = 2:nsamp
+    # isotropic Gaussian proposal distribution
+    mnew = m[idx-1] + step*randn(n)
+    pnew = logp(mnew, xd, fd, a, b, x, y, s2, K_prior, mu_prior) 
+    pold = logp(m[idx-1], xd, fd, a, b, x, y, s2, K_prior, mu_prior)
+    #println(pnew, " \t", pold)
+    # accept or reject
+    if min(1,exp(pnew-pold)) > rand()
+      accepted += 1
+      m[idx] = mnew
+    else
+      m[idx] = m[idx-1]
+    end
+  end
+  # remove burnin
+  #m = m[(trunc(Int,nsamp/10)+1):end]
+  return m, accepted/nsamp
 end
   
