@@ -18,7 +18,7 @@ function solve_poisson(c, f, a, b; verbose=false)
 
   A = -1/h^2 * Tridiagonal(
     c[1:end-1],
-    -vcat(2c[1], c[1:end-2]+c[2:end-1], 2c[end]), 
+    -vcat(1.0, c[1:end-2]+c[2:end-1], 1.0), 
     c[1:end-1]
     )
   
