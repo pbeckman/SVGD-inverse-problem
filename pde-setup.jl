@@ -15,10 +15,11 @@ function solve_poisson(c, f, a, b; verbose=false)
   h = 1/(n-1)
 
   # build finite difference system matrix
+
   A = -1/h^2 * Tridiagonal(
     c[1:end-1],
-    -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
-    c[2:end]
+    -vcat(2c[1], c[1:end-2]+c[2:end-1], 2c[end]), 
+    c[1:end-1]
     )
   
   # enforce boundary conditions u(0) = a, u(1) = b
@@ -84,30 +85,28 @@ end
 
 
 # Computing evidence using basic Metropolis-Hastings MCMC
-function evid_MCMC(xd, fd, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, m_0)
+function post_MCMC(xd, fd, a, b, x, y, s2, K_prior, mu_prior, nsamp, step, m_0)
   n = length(xd)
-  m = zeros(n,nsamp)
-  vals = zeros(nsamp)
-  # hard-coded initial logc
-  m[:,1] = m_0
+  m = Array{Vector{Float64},1}(undef,nsamp)
+  # hard-coded initial m
+  m[1] = m_0
   accepted = 0
   for idx = 2:nsamp
     # isotropic Gaussian proposal distribution
-    mnew = m[:,idx-1] + step*randn(n,1)
-    pnew = logprior(mnew, K_prior, mu_prior)
-    pold = logprior(m[:,idx-1], K_prior, mu_prior)
+    mnew = m[idx-1] + step*randn(n)
+    pnew = logp(mnew, xd, fd, a, b, x, y, s2, K_prior, mu_prior) 
+    pold = logp(m[idx-1], xd, fd, a, b, x, y, s2, K_prior, mu_prior)
     #println(pnew, " \t", pold)
     # accept or reject
     if min(1,exp(pnew-pold)) > rand()
       accepted += 1
-      m[:,idx] = mnew
+      m[idx] = mnew
     else
-      m[:,idx] = m[:,idx-1]
+      m[idx] = m[idx-1]
     end
-    vals[idx] = loglike(m[:,idx], xd, fd, a, b, x, y, s2)
   end
   # remove burnin
-  vals = vals[(trunc(Int,nsamp/10)+1):end]
-  return sum(vals)/length(vals), accepted/nsamp
+  #m = m[(trunc(Int,nsamp/10)+1):end]
+  return m, accepted/nsamp
 end
   
