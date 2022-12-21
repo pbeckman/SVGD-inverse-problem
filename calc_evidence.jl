@@ -35,10 +35,10 @@ function L_mat(m)
   c = exp.(m)
   h = 1/(n-1)
   L = -1/h^2 * Tridiagonal(
-      c[1:end-1],
-      -vcat(2c[1], c[2:end-1]+c[3:end], 2c[end]), 
-      c[2:end]
-  )
+    c[1:end-1],
+    -vcat(1.0, c[1:end-2]+c[2:end-1], 1.0), 
+    c[1:end-1]
+    )
   L[1, 1:2]         .= [1, 0]
   L[end, end-1:end] .= [0, 1]
   return L
@@ -67,7 +67,7 @@ function evidence(y, f, u_0, m_0, σ2, Λ, S)
   L = L_mat(m_0)
   Linv = inv(L)
   M = M_mat(u_0, m_0)
-  μ = -S*(L\(M*(f-M*m0)))
+  μ = -S*(L\(M*(f-M*m_0)))
   Σ = 1e-12I(n) + σ2*S*S' + S*Linv*M*Λ*M'*Linv'*S'
   Sc = cholesky(0.5*(Σ+Σ'))
   return -(y.-μ)'*(Sc\(y.-μ)) - 0.5*logdet(Sc) - 0.5*log(2pi)
@@ -136,16 +136,16 @@ println("Setting up problem...\n")
 # boundary conditions u(0) = a, u(1) = b
 a, b = 0, 0
 # true permeability
-c_true_func(x) = 1e-1*(1 + x^2 + 0.2sin(4pi*x))
+c_true_func(x) = 1e-3*(1 + 2x^2 + sin(5pi*x))
 # iid noise variance for gaussian likelihood
 s2 = 1e-2
 # compute reference solution
-n_ref = 12
+n_ref = 22
 f_ref = ones(n_ref-2)
 x_ref = range(0, stop=1.0, length=n_ref)
 u_ref = solve_poisson(c_true_func.(x_ref), f_ref, a, b)
 # observation locations
-n = 8
+n = 27
 x = rand(n)
 # generate data
 c_true = c_true_func.(x_ref)
@@ -171,7 +171,7 @@ iter      = 10000
 
 # MCMC parameters
 nsamp = 100000
-step = 0.01
+step = 0.001
 
 println("Performing model selection\n")
 
@@ -218,14 +218,14 @@ for i = 1:length(n_trial)
 end
 
 
-gui(plot(n_trial, ev_trial, title="Log evidence vs. number of grid pts",
+plot(n_trial, ev_trial, title="Log evidence vs. number of grid pts",
                             xlabel="n",
                             ylabel="log evidence",
                             linewidth=2,
-                            legend=false))
+                            legend=false)
                             
-gui(plot(n_trial, ev_MCMC, title="MCMC log evidence vs. number of grid pts",
+plot(n_trial, ev_MCMC, title="MCMC log evidence vs. number of grid pts",
                             xlabel="n",
                             ylabel="log evidence",
                             linewidth=2,
-                            legend=false))
+                            legend=false)
